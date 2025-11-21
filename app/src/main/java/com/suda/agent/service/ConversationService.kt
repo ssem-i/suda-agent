@@ -40,8 +40,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import org.json.JSONObject
 import com.suda.agent.core.IpConfig
+import androidx.lifecycle.viewModelScope
+import okhttp3.WebSocket
 
-var numOfSeat = 21;
+var numOfSeat = 0;
 
 class ConversationService(
     private val context: Context
@@ -463,6 +465,37 @@ class ConversationService(
         }
     }
 
+
+    private fun requestSeatFromServer(command: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val json = JSONObject().apply { put("command", command) }
+
+                val body = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
+                val request = Request.Builder()
+                    .url(getBaseUrl() + "seat")
+                    .post(body)
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val replyText = response.body?.string() ?: "서버 응답 오류"
+
+                    Log.d("SEAT", "Server reply: $replyText")
+
+                    // 서버 문장을 그대로 LLM Done 이벤트로 넘김 → 기존 TTS 로직 실행됨
+                    handleEvent(ConversationService.Event.LlmDone(replyText))
+                }
+            } catch (e: Exception) {
+                handleEvent(ConversationService.Event.LlmDone("서버와 연결할 수 없습니다."))
+            }
+        }
+    }
+    //private var webSocket: WebSocket? = null
+    fun sendWsCommand(command: String){
+        val msg = """{"command":"$command"}"""
+        webSocket?.send(msg)
+    }
+
     private fun startThinking(text: String) {
         _state.value = State.STATE_LLM_RUNNING
         CoroutineScope(Dispatchers.IO).launch {
@@ -495,16 +528,6 @@ class ConversationService(
             val ttsText = when (token) {
 
                 "<maum_0>" -> {
-                    // "알베르 카뮈 저자의 이방인은 3층 어문학자료실에 있습니다"
-
-                    val title = params["title"] ?: "해당 도서"
-                    // val author = params["author"] ?: ""
-                    val location = params["location"] ?: "(위치를 찾을 수 없음)"
-
-                    "${title}는 ${location}에 있습니다."
-                }
-
-                "<maum_1>" -> {
                     val title = params["title"] ?: "해당 도서"
                     // val author = params["author"] ?: ""
                     val location = params["location"]
@@ -516,6 +539,10 @@ class ConversationService(
                         // 위치 있음
                         "${title}는 ${location}에 있습니다."
                     }
+                }
+
+                "<maum_1>" -> {
+                    "이번 달 인기도서는 해커스 토익과 혼공 씨언어 그리고 수학하자입니다"
                 }
 
                 "<maum_2>" -> {
@@ -543,19 +570,16 @@ class ConversationService(
                     }
                 }
 
-                "<maum_5>" -> "현재 집중열람실 잔여좌석은 ${numOfSeat}석입니다"
+                "<maum_5>" -> // "현재 집중열람실 잔여좌석은 ${numOfSeat}석입니다"
+                {
+                    sendWsCommand("info")
+                    return@launch
+                }
+
 
                 "<maum_6>" -> {
-                    if (numOfSeat<30) {
-                        numOfSeat += 1
-                        "퇴실 처리를 완료했습니다"
-                    }
-                    else if (numOfSeat == 30) {
-                        "퇴실 가능한 좌석이 없습니다"
-                    }
-                    else {
-                        "퇴실 가능한 좌석이 없습니다"
-                    }
+                    sendWsCommand("exit")
+                    return@launch
                 }
 
                 "<maum_7>" -> "캡스 호출이 완료되었습니다"

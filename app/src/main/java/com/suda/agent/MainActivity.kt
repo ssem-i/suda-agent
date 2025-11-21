@@ -13,16 +13,27 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+
+
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.suda.agent.core.MainViewModel
 import com.suda.agent.core.IpConfig
 import com.suda.agent.service.ConversationService
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+
 
 class MainActivity : AppCompatActivity() {
+    // 4단계
+    private var localSeat = 0
+
     companion object {
         const val MASTER_TAG = "Suda"
     }
@@ -56,6 +67,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var initializationStatus: TextView
     private lateinit var startStopButton: MaterialButton
 
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -66,7 +79,17 @@ class MainActivity : AppCompatActivity() {
 
         // 권한 확인 및 요청
         ensureMicPermission()
+
+        // 4단계 추가
+        viewModel.connectWebSocket("192.168.0.4")
+        lifecycleScope.launch {
+            viewModel.seatFlow.collect { seat ->
+                //seatDisplay.text = seat.toString()
+                localSeat = seat
+            }
+        }
     }
+
 
     private fun initializeViews() {
         ipConfigInput = findViewById(R.id.ipConfigInput)

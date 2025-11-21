@@ -87,4 +87,7 @@ dependencies {
     // Networking
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+
+    // Android(WebSocket 클라이언트) 코드 생성
+    implementation("com.squareup.okhttp3:okhttp:4.11.0")
 }
