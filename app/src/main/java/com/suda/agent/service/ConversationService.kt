@@ -41,6 +41,8 @@ import okhttp3.logging.HttpLoggingInterceptor
 import org.json.JSONObject
 import com.suda.agent.core.IpConfig
 
+var numOfSeat = 21;
+
 class ConversationService(
     private val context: Context
 ) {
@@ -241,7 +243,7 @@ class ConversationService(
         }
     }
 
-        private fun initAudioTrack() {
+    private fun initAudioTrack() {
         Log.d(TAG, "AudioTrack initialization started")
         try {
             val localTts = tts
@@ -249,7 +251,7 @@ class ConversationService(
                 Log.e(TAG, "TTS is not initialized")
                 return
             }
-            
+
             val sampleRate = localTts.sampleRate()
             val bufferSize = AudioTrack.getMinBufferSize(
                 sampleRate,
@@ -402,7 +404,7 @@ class ConversationService(
         currentTTSJob?.cancel()
         currentTTSJob = null
         resetState()
-        
+
         // AudioTrack 정리
         if (::audioTrack.isInitialized) {
             try {
@@ -419,12 +421,12 @@ class ConversationService(
         Log.d(TAG, "Cleaning up ConversationService")
         stopTTS()
         vadManager.release()
-        
+
         // TTS 해제
         tts?.release()
         tts = null
-        
-        // STT 해제  
+
+        // STT 해제
         offlineRecognizer?.release()
         offlineRecognizer = null
     }
@@ -485,7 +487,7 @@ class ConversationService(
             var llmResponseList = LLMResponseParser.llmResponseParse(response)
             Log.d(TAG, "LLM Response List: $llmResponseList")
             //var ttsText = "안녕하세요22"
-                // getSimpleTtsText(llmResponseList[0].token, llmResponseList[0].parameters)
+            // getSimpleTtsText(llmResponseList[0].token, llmResponseList[0].parameters)
             //수정
             val token = llmResponseList[0].token
             val params = llmResponseList[0].parameters
@@ -503,7 +505,17 @@ class ConversationService(
                 }
 
                 "<maum_1>" -> {
-                    "이번 달 인기도서는 해커스 토익과 혼공 씨언어 그리고 수학하자입니다"
+                    val title = params["title"] ?: "해당 도서"
+                    // val author = params["author"] ?: ""
+                    val location = params["location"]
+
+                    if (location.isNullOrBlank()) {
+                        // 위치 없음
+                        "위치를 찾을 수 없습니다."
+                    } else {
+                        // 위치 있음
+                        "${title}는 ${location}에 있습니다."
+                    }
                 }
 
                 "<maum_2>" -> {
@@ -531,9 +543,20 @@ class ConversationService(
                     }
                 }
 
-                "<maum_5>" -> "현재 집중열람실 잔여좌석은 21석입니다"
+                "<maum_5>" -> "현재 집중열람실 잔여좌석은 ${numOfSeat}석입니다"
 
-                "<maum_6>" -> "퇴실 처리를 완료했습니다"
+                "<maum_6>" -> {
+                    if (numOfSeat<30) {
+                        numOfSeat += 1
+                        "퇴실 처리를 완료했습니다"
+                    }
+                    else if (numOfSeat == 30) {
+                        "퇴실 가능한 좌석이 없습니다"
+                    }
+                    else {
+                        "퇴실 가능한 좌석이 없습니다"
+                    }
+                }
 
                 "<maum_7>" -> "캡스 호출이 완료되었습니다"
 
@@ -592,7 +615,7 @@ class ConversationService(
                             }
 
                             Log.d(TAG, "TTS Generate......")
-                            
+
                             val localTts = tts
                             if (localTts != null) {
                                 val audioData = localTts.generate(text = splitTtsText.trim(), sid = 0, speed = 1.0f)
@@ -650,14 +673,14 @@ class ConversationService(
         // 더 정밀한 문장 분리 로직
         val sentences = mutableListOf<String>()
         val delimiters = arrayOf(".", "!", "?", "~", "…")
-        
+
         var currentSentence = ""
         var i = 0
-        
+
         while (i < text.length) {
             val char = text[i]
             currentSentence += char
-            
+
             // 구분자를 만났을 때
             if (delimiters.contains(char.toString())) {
                 // 다음 문자가 공백이거나 문자열 끝이면 문장 끝으로 판단
@@ -671,13 +694,13 @@ class ConversationService(
             }
             i++
         }
-        
+
         // 마지막 문장 처리
         val trimmedSentence = currentSentence.trim()
         if (trimmedSentence.isNotEmpty()) {
             sentences.add(trimmedSentence)
         }
-        
+
         // 빈 문장들 제거
         return sentences.filter { it.isNotBlank() }
     }
@@ -685,14 +708,14 @@ class ConversationService(
     private fun playAudio(audioData: GeneratedAudio) {
         try {
             ensureAudioTrackInitialized()
-            
+
             val samples = audioData.samples
             Log.d(TAG, "Playing audio with ${samples.size} samples")
-            
+
             if (audioTrack.state == AudioTrack.STATE_INITIALIZED) {
                 val written = audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
                 Log.d(TAG, "AudioTrack wrote $written/${samples.size} samples")
-                
+
                 // 재생 완료까지 대기
                 val durationMs = (samples.size * 1000L) / audioData.sampleRate
                 Thread.sleep(durationMs + 100) // 약간의 버퍼 추가
@@ -716,12 +739,12 @@ class ConversationService(
 
     private suspend fun sendSttText(sttResult: String, sttLatency: Float) = withContext(Dispatchers.IO) {
         if (sttResult.isBlank()) return@withContext
-        
+
         // 화면에 로그 표시
         withContext(Dispatchers.Main) {
             addLog("STT: $sttResult (${sttLatency.toInt()}ms)")
         }
-        
+
         val json = JSONObject().apply {
             put("data", sttResult)
             put("response_time", sttLatency)
@@ -749,7 +772,7 @@ class ConversationService(
         withContext(Dispatchers.Main) {
             addLog("LLM: $llmResult (${llmLatency.toInt()}ms)")
         }
-        
+
         val json = JSONObject().apply {
             put("data", llmResult)
             put("response_time", llmLatency)
@@ -777,7 +800,7 @@ class ConversationService(
         withContext(Dispatchers.Main) {
             addLog("TTS: $ttsResult (${ttsFirstLatency.toInt()}ms)")
         }
-        
+
         val json = JSONObject().apply {
             put("data", ttsResult)
             put("response_time", ttsFirstLatency)
